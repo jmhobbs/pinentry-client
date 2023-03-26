@@ -4,6 +4,25 @@ import "bytes"
 
 type Request func() []byte
 
+func Escape(input []byte) []byte {
+	if input == nil {
+		return nil
+	}
+	return bytes.ReplaceAll(
+		bytes.ReplaceAll(
+			bytes.ReplaceAll(
+				input,
+				[]byte{'%'},
+				[]byte{'%', '2', '5'},
+			),
+			[]byte{'\n'},
+			[]byte{'%', '0', 'A'},
+		),
+		[]byte{'\r'},
+		[]byte{'%', '0', 'D'},
+	)
+}
+
 func RequestGeneric(command string, parameters []byte) Request {
 	var msg []byte
 	if len(parameters) == 0 {
@@ -11,7 +30,7 @@ func RequestGeneric(command string, parameters []byte) Request {
 	} else {
 		buf := bytes.NewBufferString(command)
 		buf.Write([]byte{' '})
-		buf.Write(parameters)
+		buf.Write(Escape(parameters))
 		msg = buf.Bytes()
 	}
 
@@ -29,7 +48,7 @@ var (
 	RequestNOP   = RequestGeneric("NOP", nil)
 )
 
-func RequestOption(name, value string) []byte {
+func RequestOption(name, value string) Request {
 	buf := bytes.NewBufferString("OPTION")
 	buf.Write([]byte{' '})
 	buf.WriteString(name)
@@ -37,22 +56,16 @@ func RequestOption(name, value string) []byte {
 		buf.WriteRune('=')
 		buf.WriteString(value)
 	}
-	return buf.Bytes()
+	return func() []byte {
+		return buf.Bytes()
+	}
 }
 
-/*
-Sends raw data to the server.
-There must be exactly one space after the ’D’.
-The values for ’%’, CR and LF must be percent escaped.
-These are encoded as %25, %0D and %0A, respectively.
-Only uppercase letters should be used in the hexadecimal representation.
-Other characters may be percent escaped for easier debugging.
-All Data lines are considered one data stream up to the OK or ERR response.
-Status and Inquiry Responses may be mixed with the Data lines.
-*/
-func RequestData(data []byte) []byte {
+func RequestData(data []byte) Request {
 	buf := bytes.NewBufferString("D")
 	buf.Write([]byte{' '})
-	buf.Write(data)
-	return buf.Bytes()
+	buf.Write(Escape(data))
+	return func() []byte {
+		return buf.Bytes()
+	}
 }
