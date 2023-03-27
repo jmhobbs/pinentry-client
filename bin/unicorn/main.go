@@ -11,7 +11,8 @@ func main() {
 		SetDescription("What's your favorite mythological animal?").
 		SetPrompt("Animal:").
 		SetButtonOk("They're the best.").
-		SetButonCancel("I'm not telling you.")
+		SetButonCancel("I'm not telling you.").
+		SetQualityBar(quality)
 
 	defer pe.Close()
 

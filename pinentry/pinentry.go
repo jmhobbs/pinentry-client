@@ -8,11 +8,14 @@ import (
 	"github.com/jmhobbs/pinentry-client/assuan"
 )
 
+type QualityEvaluator func(value string) int
+
 type PinEntry struct {
-	bin    string
-	cmd    *exec.Cmd
-	client *assuan.Client
-	queue  []assuan.Request
+	bin      string
+	cmd      *exec.Cmd
+	client   *assuan.Client
+	queue    []assuan.Request
+	quaility QualityEvaluator
 }
 
 func (p *PinEntry) setStr(command, value string) *PinEntry {
@@ -22,6 +25,12 @@ func (p *PinEntry) setStr(command, value string) *PinEntry {
 
 func (p *PinEntry) SetTimeout(seconds int) *PinEntry {
 	p.queue = append(p.queue, assuan.RequestGeneric("SETTIMEOUT", []byte(strconv.Itoa(seconds))))
+	return p
+}
+
+func (p *PinEntry) SetQualityBar(qualityFn QualityEvaluator) *PinEntry {
+	p.quaility = qualityFn
+	p.queue = append(p.queue, assuan.RequestGeneric("SETQUALITYBAR", nil))
 	return p
 }
 
@@ -128,19 +137,37 @@ func (p *PinEntry) GetPIN() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	response, err := p.client.Read()
-	if err != nil {
-		return "", err
-	}
+	for {
+		response, err := p.client.Read()
+		if err != nil {
+			return "", err
+		}
 
-	if response.Type == assuan.Error {
-		return "", NewPinentryError(response)
-	}
-	if response.Type != assuan.Data {
+		if response.Type == assuan.Error {
+			return "", NewPinentryError(response)
+		}
+
+		if response.Type == assuan.Data {
+			return string(response.Data), nil
+		}
+
+		if response.Type == assuan.Inquire && response.Keyword == "QUALITY" {
+			if p.quaility != nil {
+				quality := p.quaility(response.Parameters)
+				err = p.client.Write(assuan.RequestGeneric("D", []byte(strconv.Itoa(quality))))
+				if err != nil {
+					return "", err
+				}
+				err = p.client.Write(assuan.RequestEnd)
+				if err != nil {
+					return "", err
+				}
+				continue
+			}
+		}
+
 		return "", fmt.Errorf("unexpected response")
 	}
-
-	return string(response.Data), nil
 }
 
 func (p *PinEntry) Confirm() (bool, error) {
